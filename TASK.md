@@ -186,7 +186,9 @@ are most relevant to your research question, and explain why.
 6. **Parameter sensitivity** — does the advantage or disadvantage of your
    extension depend on drift speed `c` or selection strength `sigma`?
    Plot the key outcome (e.g. mean fitness at generation 100, extinction
-   rate) as a function of the parameter you varied.
+   rate) as a function of the parameter you varied. This point is important, 
+   we want to explore grid of parameters, to see how model responds to 
+   parameters perturbation.
 
 ### Suggested plots
 
