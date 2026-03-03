@@ -1,30 +1,41 @@
 # environment.py
 
 import numpy as np
+from strategies import EnvironmentDynamics
 
-class Environment:
+
+class LinearShiftEnvironment(EnvironmentDynamics):
     """
-    Klasa środowiska przechowuje optymalny fenotyp alpha
-    oraz reguły jego zmiany w czasie.
+    Scenariusz globalnego ocieplenia: optymalny fenotyp przesuwa się liniowo
+    z opcjonalnymi losowymi fluktuacjami w każdym pokoleniu.
+
+        alpha(t) = alpha(t-1) + N(c, delta^2 * I)
+
+    Jeśli delta=0, przesunięcie jest czysto deterministyczne:
+        alpha(t) = alpha(t-1) + c
     """
-    def __init__(self, alpha_init, c, delta):
-        """
-        :param alpha_init: początkowy wektor alpha
-        :param c: wektor kierunkowy zmiany
-        :param delta: odchylenie std w losowej fluktuacji
-        """
-        self.alpha = alpha_init
-        self.c = c
-        self.delta = delta
 
-    def update(self):
+    def __init__(self, alpha_init: np.ndarray, c: np.ndarray, delta: float = 0.0):
         """
-        Zmiana środowiska w każdym pokoleniu:
-        alpha(t) = alpha(t-1) + N(c, delta^2 I)
+        :param alpha_init: początkowy optymalny fenotyp
+        :param c: wektor kierunkowej zmiany (średnie przesunięcie na pokolenie)
+        :param delta: odch. std. losowych fluktuacji wokół c (0 = brak szumu)
         """
-        n = len(self.alpha)
-        random_shift = np.random.normal(loc=self.c, scale=self.delta, size=n)
-        self.alpha = self.alpha + random_shift
+        self.alpha = np.array(alpha_init, dtype=float)
+        self.c = np.array(c, dtype=float)
+        self.delta = float(delta)
 
-    def get_optimal_phenotype(self):
-        return self.alpha
+    def update(self) -> None:
+        """alpha(t) = alpha(t-1) + N(c, delta^2 * I)"""
+        if self.delta > 0:
+            shift = np.random.normal(loc=self.c, scale=self.delta, size=len(self.alpha))
+        else:
+            shift = self.c.copy()
+        self.alpha = self.alpha + shift
+
+    def get_optimal_phenotype(self) -> np.ndarray:
+        return self.alpha.copy()
+
+
+# Alias dla kompatybilności wstecznej
+Environment = LinearShiftEnvironment

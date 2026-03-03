@@ -1,80 +1,186 @@
 # main.py
+"""
+Główny skrypt symulacji Geometrycznego Modelu Fishera.
 
-import numpy as np
-import config
-from environment import Environment
-from population import Population
-from mutation import mutate_population
-from selection import proportional_selection, threshold_selection
-from reproduction import asexual_reproduction
-from visualization import plot_population
+Uruchomienie:
+    python main.py
 
-# main.py
+Aby zmienić parametry symulacji, edytuj plik config.py.
+
+Aby użyć innej strategii selekcji / reprodukcji / środowiska, zmień
+obiekty przekazywane do run_simulation() w funkcji main() poniżej.
+Dostępne klasy bazowe do rozszerzeń: strategies.py
+"""
 
 import os
 import numpy as np
+
 import config
-from environment import Environment
+from environment import LinearShiftEnvironment
 from population import Population
-from mutation import mutate_population
-from selection import proportional_selection, threshold_selection
-from reproduction import asexual_reproduction
-from visualization import plot_population
+from mutation import IsotropicMutation
+from selection import TwoStageSelection
+from reproduction import AsexualReproduction
+from visualization import plot_population, plot_frame, plot_stats
+from stats import SimulationStats
 
-def main():
-    env = Environment(alpha_init=config.alpha0, c=config.c, delta=config.delta)
-    pop = Population(size=config.N, n_dim=config.n)
 
-    # Katalog, w którym zapisujemy obrazki (możesz nazwać np. "frames/")
-    frames_dir = "frames"
-    os.makedirs(frames_dir, exist_ok=True)  # tworzy folder, jeśli nie istnieje
+# ---------------------------------------------------------------------------
+# Główna pętla symulacji
+# ---------------------------------------------------------------------------
 
-    for generation in range(config.max_generations):
-        # 1. Mutacja
-        mutate_population(pop, mu=config.mu, mu_c=config.mu_c, xi=config.xi)
+def run_simulation(
+    population: Population,
+    environment,
+    selection_strategy,
+    reproduction_strategy,
+    mutation_strategy,
+    max_generations: int = config.max_generations,
+    frames_dir: str = None,
+    verbose: bool = True,
+) -> SimulationStats:
+    """
+    Uruchamia pętlę ewolucyjną i zwraca zebrane statystyki.
 
-        # 2. Selekcja
-        survivors = threshold_selection(pop, env.get_optimal_phenotype(), config.sigma, config.threshold)
-        pop.set_individuals(survivors)
-        if len(survivors) > 0:
-            proportional_selection(pop, env.get_optimal_phenotype(), config.sigma, config.N)
-        else:
-            print(f"Wszyscy wymarli w pokoleniu {generation}. Kończę symulację.")
+    Pętla ewolucyjna (4 kroki zgodnie z treścią zadania):
+        1. Mutacja
+        2. Selekcja
+        3. Reprodukcja
+        4. Zmiana środowiska
+
+    :param population:            obiekt Population
+    :param environment:           obiekt implementujący EnvironmentDynamics
+    :param selection_strategy:    obiekt implementujący SelectionStrategy
+    :param reproduction_strategy: obiekt implementujący ReproductionStrategy
+    :param mutation_strategy:     obiekt implementujący MutationStrategy
+    :param max_generations:       liczba pokoleń do zasymulowania
+    :param frames_dir:            katalog do zapisu klatek PNG (None = brak)
+    :param verbose:               czy drukować postęp co 10 pokoleń
+    :return:                      obiekt SimulationStats z wynikami
+    """
+    stats = SimulationStats()
+
+    if frames_dir is not None:
+        os.makedirs(frames_dir, exist_ok=True)
+
+    for generation in range(max_generations):
+        alpha = environment.get_optimal_phenotype()
+
+        # Krok 1: Mutacja
+        mutation_strategy.mutate(population)
+
+        # Krok 2: Selekcja
+        survivors = selection_strategy.select(population.get_individuals(), alpha)
+        if not survivors:
+            if verbose:
+                print(f"Populacja wymarła w pokoleniu {generation}.")
+            stats.mark_extinct(generation)
             break
 
-        # 3. Reprodukcja (w przykładzie jest już wbudowana w selekcję)
-        # 4. Zmiana środowiska
-        env.update()
+        # Krok 3: Reprodukcja
+        new_individuals = reproduction_strategy.reproduce(survivors, config.N)
+        population.set_individuals(new_individuals)
 
-        # Zapis aktualnego stanu populacji do pliku PNG
-        frame_filename = os.path.join(frames_dir, f"frame_{generation:03d}.png")
-        plot_population(pop, env.get_optimal_phenotype(), generation, save_path=frame_filename, show_plot=False)
+        # Zbieranie statystyk i zapis klatki (nowa populacja vs aktualne optimum)
+        stats.record(generation, population, alpha, config.sigma,
+                     reproduction_strategy=reproduction_strategy)
 
-    print("Symulacja zakończona. Tworzenie GIF-a...")
+        if frames_dir is not None:
+            frame_path = os.path.join(frames_dir, f"frame_{generation:03d}.png")
+            plot_frame(population, alpha, generation, stats,
+                       save_path=frame_path, show_plot=False,
+                       max_generations=max_generations,
+                       sigma=config.sigma)
 
-    # Tutaj wywołujemy funkcję, która połączy zapisane klatki w animację
+        # Krok 4: Zmiana środowiska
+        environment.update()
+
+        if verbose and generation % 10 == 0:
+            r = stats.records[-1]
+            print(f"  Pokolenie {generation:4d} | "
+                  f"śr. fitness: {r.mean_fitness:.3f} | "
+                  f"dist. od optimum: {r.distance_from_optimum:.3f} | "
+                  f"var. fenotyp.: {r.phenotype_variance:.3f}")
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Narzędzie do tworzenia GIF
+# ---------------------------------------------------------------------------
+
+def create_gif_from_frames(frames_dir: str, gif_filename: str,
+                            duration: float = 0.2) -> None:
+    """
+    Łączy wszystkie pliki PNG z katalogu frames_dir w animację GIF.
+    Wymaga: pip install imageio
+    """
+    import imageio
+    filenames = sorted(f for f in os.listdir(frames_dir) if f.endswith(".png"))
+    if not filenames:
+        print("Brak klatek do złożenia w GIF.")
+        return
+    with imageio.get_writer(gif_filename, mode='I', duration=duration) as writer:
+        for fname in filenames:
+            writer.append_data(imageio.imread(os.path.join(frames_dir, fname)))
+
+
+# ---------------------------------------------------------------------------
+# Punkt wejścia
+# ---------------------------------------------------------------------------
+
+def main():
+    # --- Ziarno losowości (config.seed = None → inna symulacja za każdym razem) ---
+    if config.seed is not None:
+        np.random.seed(config.seed)
+
+    # --- Inicjalizacja komponentów ---
+    env = LinearShiftEnvironment(
+        alpha_init=config.alpha0,
+        c=config.c,
+        delta=config.delta,
+    )
+    pop = Population(
+        size=config.N,
+        n_dim=config.n,
+        init_scale=config.init_scale,
+        alpha_init=config.alpha0,   # populacja startuje blisko alpha0, nie wokół zera
+    )
+    selection = TwoStageSelection(
+        sigma=config.sigma,
+        threshold=config.threshold,
+        N=config.N,
+    )
+    reproduction = AsexualReproduction()
+    mutation = IsotropicMutation(
+        mu=config.mu,
+        mu_c=config.mu_c,
+        xi=config.xi,
+    )
+
+    # --- Uruchomienie symulacji ---
+    print("Rozpoczynam symulację...\n")
+    frames_dir = "frames"
+    stats = run_simulation(
+        population=pop,
+        environment=env,
+        selection_strategy=selection,
+        reproduction_strategy=reproduction,
+        mutation_strategy=mutation,
+        frames_dir=frames_dir,
+        verbose=True,
+    )
+
+    print(f"\n{stats.summary()}")
+
+    # --- GIF ---
+    print("\nTworzenie GIF-a...")
     create_gif_from_frames(frames_dir, "simulation.gif")
     print("GIF zapisany jako simulation.gif")
 
-def create_gif_from_frames(frames_dir, gif_filename, duration=0.2):
-    """
-    Łączy wszystkie obrazki z katalogu `frames_dir` w jeden plik GIF.
-    Wymaga biblioteki imageio (pip install imageio).
-    :param frames_dir: folder z plikami .png
-    :param gif_filename: nazwa pliku wyjściowego GIF
-    :param duration: czas wyświetlania jednej klatki w sekundach
-    """
-    import imageio
-    import os
-
-    # Sortujemy pliki po nazwach, żeby zachować kolejność generacji
-    filenames = sorted([f for f in os.listdir(frames_dir) if f.endswith(".png")])
-    
-    with imageio.get_writer(gif_filename, mode='I', duration=duration) as writer:
-        for file_name in filenames:
-            path = os.path.join(frames_dir, file_name)
-            image = imageio.imread(path)
-            writer.append_data(image)
+    # --- Wykres statystyk ---
+    plot_stats(stats, save_path="simulation_stats.png", show_plot=False)
+    print("Wykres statystyk zapisany jako simulation_stats.png")
 
 
 if __name__ == "__main__":

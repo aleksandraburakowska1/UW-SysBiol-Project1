@@ -1,23 +1,49 @@
 # reproduction.py
 
 import copy
+import numpy as np
+from strategies import ReproductionStrategy
 
-def asexual_reproduction(survivors, N):
+
+class AsexualReproduction(ReproductionStrategy):
     """
-    Wersja bezpłciowa (klonowanie):
-    - Zakładamy, że potomków będzie tyle, aby utrzymać rozmiar populacji = N.
-    - W najprostszej wersji: jeżeli mamy M ocalałych, 
-      a M < N, to klonujemy ich losowo aż do uzyskania N osobników.
+    Reprodukcja bezpłciowa (klonowanie):
+    Losowo wybiera rodziców spośród ocalałych (z powtórzeniami) i klonuje ich,
+    aby uzyskać dokładnie target_size osobników nowego pokolenia.
+
+    Każdy ocalały ma równe szanse na bycie rodzicem – selekcja już uwzględniła fitness.
+    Po każdym wywołaniu reproduce() dostępne są statystyki przez get_reproduction_stats().
     """
-    new_population = []
-    if len(survivors) == 0:
-        # Zabezpieczenie: jeśli wszyscy wymarli, inicjujemy od nowa (albo zatrzymujemy symulację).
-        return []
 
-    while len(new_population) < N:
-        parent = copy.deepcopy(survivors[0])  # np. zawsze klonuj pierwszego (do testów)
-        # W praktyce można klonować losowo: 
-        # parent = copy.deepcopy(np.random.choice(survivors))
-        new_population.append(parent)
+    def __init__(self):
+        self._last_counts: np.ndarray = np.array([])
 
-    return new_population[:N]  # przycinamy, gdyby było za dużo
+    def reproduce(self, survivors: list, target_size: int) -> list:
+        if not survivors:
+            self._last_counts = np.array([])
+            return []
+        indices = np.random.randint(0, len(survivors), size=target_size)
+        # bincount[i] = liczba potomków osobnika i
+        self._last_counts = np.bincount(indices, minlength=len(survivors))
+        return [copy.deepcopy(survivors[i]) for i in indices]
+
+    def get_reproduction_stats(self) -> dict:
+        """
+        Zwraca statystyki z ostatniego reproduce():
+          n_parents       – ilu osobników miało ≥1 potomka ("ewolucyjny sukces")
+          median_offspring – mediana potomków wśród reprodukujących się osobników
+          max_offspring   – maksymalna płodność (najlepiej przystosowany osobnik)
+        """
+        if len(self._last_counts) == 0:
+            return {'n_parents': 0, 'median_offspring': 0.0, 'max_offspring': 0}
+        reproducing = self._last_counts[self._last_counts > 0]
+        return {
+            'n_parents':        int(len(reproducing)),
+            'median_offspring': float(np.median(reproducing)) if len(reproducing) else 0.0,
+            'max_offspring':    int(self._last_counts.max()),
+        }
+
+
+# Funkcja pomocnicza zachowana dla kompatybilności wstecznej
+def asexual_reproduction(survivors: list, N: int) -> list:
+    return AsexualReproduction().reproduce(survivors, N)
