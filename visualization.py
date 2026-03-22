@@ -169,11 +169,12 @@ def plot_stats(stats, save_path: str = None, show_plot: bool = True) -> None:
     :param save_path: ścieżka do zapisu PNG (None = brak zapisu)
     :param show_plot: True = wyświetl interaktywnie
     """
+    male_mean_tails = stats.male_mean_tails
     gens = stats.generations
     has_repro = stats.n_parents_series.sum() > 0
     n_rows = 2 if has_repro else 1
 
-    fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows))
+    fig, axes = plt.subplots(n_rows, 3, figsize=(18, 4 * n_rows))
     if n_rows == 1:
         axes = axes[np.newaxis, :]   # ujednolicź indeksowanie
 
@@ -188,11 +189,12 @@ def plot_stats(stats, save_path: str = None, show_plot: bool = True) -> None:
     axes[0, 1].set_title("Odległość centroidu od optimum")
     axes[0, 1].set_xlabel("Pokolenie")
     axes[0, 1].set_ylabel("||μ_p − α||")
-
-    axes[0, 2].plot(gens, stats.phenotype_variances, color='seagreen')
-    axes[0, 2].set_title("Wariancja fenotypowa (różnorodność)")
+    #podmieniłam na wykres ogona zamiast wariancji
+    axes[0, 2].plot(gens, male_mean_tails, color='seagreen')
+    axes[0, 2].set_title("Średnia długość ogona samców")
     axes[0, 2].set_xlabel("Pokolenie")
-    axes[0, 2].set_ylabel("Var(p)")
+    axes[0, 2].set_ylabel("Śr. ogon samców")
+    axes[0, 2].set_ylim(0, 1)
 
     # --- Rząd 2: statystyki reprodukcji ---
     if has_repro:
@@ -299,18 +301,18 @@ def plot_frame(population, alpha: np.ndarray, generation: int, stats,
     ax.set_ylabel("Fitness")
     ax.grid(True, alpha=0.3)
 
-    # --- Panel 3: odległość centroidu od optimum ---
+    # --- Panel 3: zmieniłam na dł.ogona ---
     ax = axes[2]
     if has_data:
-        ax.plot(gens, stats.distances_from_optimum, color='darkorange', lw=1.5)
-        ax.fill_between(gens, stats.distances_from_optimum, alpha=0.15, color='darkorange')
+        ax.plot(gens, stats.male_mean_tails, color='darkorange', lw=1.5)
+        ax.fill_between(gens, stats.male_mean_tails, alpha=0.15, color='darkorange')
         ax.axvline(generation, color='red', linestyle='--', lw=1, alpha=0.6,
-                   label=f"gen {generation}")
+                  label=f"gen {generation}")
     ax.set_xlim(0, x_max)
-    ax.set_ylim(bottom=0)
-    ax.set_title("Odległość centroidu od optimum")
+    ax.set_ylim(0, 1)
+    ax.set_title("Średnia długość ogona samców")
     ax.set_xlabel("Pokolenie")
-    ax.set_ylabel("||\u03bc_p \u2212 \u03b1||")
+    ax.set_ylabel("Śr. ogon samców")
     ax.grid(True, alpha=0.3)
 
     fig.suptitle(f"Pokolenie {generation:03d}", fontsize=13, fontweight='bold')
@@ -322,3 +324,4 @@ def plot_frame(population, alpha: np.ndarray, generation: int, stats,
         plt.show()
     else:
         plt.close()
+
