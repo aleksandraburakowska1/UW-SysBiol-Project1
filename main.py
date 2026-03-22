@@ -14,13 +14,13 @@ Dostępne klasy bazowe do rozszerzeń: strategies.py
 
 import os
 import numpy as np
-
+import glob
 import config
 from environment import LinearShiftEnvironment
 from population import Population
 from mutation import IsotropicMutation
 from selection import TwoStageSelection
-from reproduction import AsexualReproduction
+from reproduction import SexualReproduction
 from visualization import plot_population, plot_frame, plot_stats
 from stats import SimulationStats
 
@@ -151,7 +151,7 @@ def main():
         threshold=config.threshold,
         N=config.N,
     )
-    reproduction = AsexualReproduction()
+    reproduction = SexualReproduction()
     mutation = IsotropicMutation(
         mu=config.mu,
         mu_c=config.mu_c,
@@ -161,6 +161,17 @@ def main():
     # --- Uruchomienie symulacji ---
     print("Rozpoczynam symulację...\n")
     frames_dir = "frames"
+    os.makedirs(frames_dir, exist_ok=True)
+
+    for f in glob.glob(os.path.join(frames_dir, "*.png")):
+        os.remove(f)
+
+    if os.path.exists("simulation.gif"):
+        os.remove("simulation.gif")
+
+    if os.path.exists("simulation_stats.png"):
+        os.remove("simulation_stats.png")
+  
     stats = run_simulation(
         population=pop,
         environment=env,
@@ -185,3 +196,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
